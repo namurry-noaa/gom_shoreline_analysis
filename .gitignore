@@ -1,0 +1,26 @@
+# Data files — NOT committed (large; separate provenance/licensing)
+*.gpkg
+*.shp
+*.shx
+*.dbf
+*.prj
+*.cpg
+*.qpj
+*.sbn
+*.sbx
+*.shp.xml
+RC1/
+Shapefiles/
+
+# Local working notes / session summaries (per 3431 machine convention)
+*_summary.md
+*.claude
+
+# Postgres dumps / scratch
+*.dump
+*.sql.gz
+
+# OS / editor cruft
+.DS_Store
+*~
+.vscode/
