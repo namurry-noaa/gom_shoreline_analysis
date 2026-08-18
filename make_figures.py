@@ -11,6 +11,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import geopandas as gpd
+import contextily as cx
 from sqlalchemy import create_engine, text
 
 ENGINE = create_engine("postgresql+psycopg2://mv57@localhost:5432/gis_dev")
@@ -21,7 +22,7 @@ os.makedirs(OUT, exist_ok=True)
 plt.rcParams.update({
     "figure.facecolor": "white", "axes.facecolor": "white",
     "font.size": 11, "axes.titlesize": 13, "axes.titleweight": "bold",
-    "savefig.dpi": 150, "savefig.bbox": "tight",
+    "savefig.dpi": 200, "savefig.bbox": "tight", "figure.constrained_layout.use": True,
 })
 
 def gdf(sql):
@@ -37,14 +38,15 @@ def fig_detail():
         "Green (NGS)": 710, "Purple (NGS)": 542, "Orange (NGS)": 493,
         "MS_TX (Notre Dame)": 111,
     }
-    fig, ax = plt.subplots(figsize=(7, 4))
+    fig, ax = plt.subplots(figsize=(8, 4.4))
     names = list(rows); vals = list(rows.values())
     colors = ["#28dc5a", "#b478ff", "#ff8c00", "#888888"]
     ax.barh(names, vals, color=colors)
     for i, v in enumerate(vals):
         ax.text(v + 8, i, f"{v}", va="center", fontweight="bold")
+    ax.set_xlim(0, max(vals) * 1.15)
     ax.set_xlabel("Vertices per kilometer")
-    ax.set_title("Fig 1. Shoreline detail: NGS tiles vs. Notre Dame reference")
+    ax.set_title("Shoreline detail: NGS tiles vs. Notre Dame reference")
     ax.invert_yaxis()
     fig.savefig(f"{OUT}/fig1_detail_comparison.png"); plt.close(fig)
     print("fig1 done")
@@ -74,7 +76,7 @@ def fig_tangle():
     green = gdf(f"SELECT geom_m AS geom FROM gom_shoreline.green_la2206_utm16 WHERE geom_m && {env}")
     orange = gdf(f"SELECT geom_m AS geom FROM gom_shoreline.orange_la2205 WHERE geom_m && {env}")
     dr = gdf(f"SELECT geom FROM gom_shoreline.line_network_dr WHERE geom && {env}")
-    fig, (a1, a2) = plt.subplots(1, 2, figsize=(11, 5))
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(11, 5.5))
     green.plot(ax=a1, color="#28dc5a", lw=0.6)
     orange.plot(ax=a1, color="#ff8c00", lw=0.6)
     a1.set_title("Before: green + orange overlaid\n(1,076 crossings — tangle)")
@@ -83,7 +85,7 @@ def fig_tangle():
     for a in (a1, a2):
         a.set_xlim(cx-r, cx+r); a.set_ylim(cy-r, cy+r)
         a.set_xticks([]); a.set_yticks([]); a.set_aspect("equal")
-    fig.suptitle("Fig 3. Marsh tangle resolved by detail-based authority", fontweight="bold")
+    fig.suptitle("Fig 3. Marsh tangle resolved by detail-based authority", fontweight="bold", fontsize=14)
     fig.savefig(f"{OUT}/fig3_marsh_tangle.png"); plt.close(fig)
     print("fig3 done")
 
@@ -94,7 +96,7 @@ def fig_seam():
     green = gdf(f"SELECT geom_m AS geom FROM gom_shoreline.green_la2206_utm16 WHERE geom_m && {env}")
     o_orig = gdf(f"SELECT geom_m AS geom FROM gom_shoreline.orange_la2205 WHERE geom_m && {env}")
     o_clip = gdf(f"SELECT geom FROM gom_shoreline.orange_clean_full WHERE geom && {env}")
-    fig, (a1, a2) = plt.subplots(1, 2, figsize=(11, 5))
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(11, 5.5))
     green.plot(ax=a1, color="#28dc5a", lw=0.6); o_orig.plot(ax=a1, color="#ff8c00", lw=0.6)
     a1.set_title("Before: orange overlaps green")
     green.plot(ax=a2, color="#28dc5a", lw=0.6); o_clip.plot(ax=a2, color="#ff8c00", lw=0.6)
@@ -102,7 +104,7 @@ def fig_seam():
     for a in (a1, a2):
         a.set_xlim(cx-r, cx+r); a.set_ylim(cy-r, cy+r)
         a.set_xticks([]); a.set_yticks([]); a.set_aspect("equal")
-    fig.suptitle("Fig 4. Buffer-difference overlap removal at a seam", fontweight="bold")
+    fig.suptitle("Fig 4. Buffer-difference overlap removal at a seam", fontweight="bold", fontsize=14)
     fig.savefig(f"{OUT}/fig4_seam_before_after.png"); plt.close(fig)
     print("fig4 done")
 
@@ -118,21 +120,75 @@ def fig_polys():
     ys = [d.get(k, 0) for k in order]
     fig, ax = plt.subplots(figsize=(7, 4))
     ax.bar(order, ys, color="#00becd", edgecolor="#006b78")
+    ax.set_yscale("log")
     for i, v in enumerate(ys):
         ax.text(i, v, f"{v:,}", ha="center", va="bottom", fontsize=9)
-    ax.set_xlabel("Polygon area (m²)"); ax.set_ylabel("Count")
+    ax.set_xlabel("Polygon area (m²)"); ax.set_ylabel("Count (log scale)")
     ax.set_title("Fig 5. Polygon product size distribution (88,807 polygons)")
     fig.savefig(f"{OUT}/fig5_polygon_distribution.png"); plt.close(fig)
     print("fig5 done")
 
-# --- Fig 6: authority map (who won where) ----------------------------------
+# --- Fig 6: authority map on ESRI World Imagery basemap --------------------
 def fig_authority():
-    cells = gdf("SELECT winner, cell AS geom FROM gom_shoreline.authority_map WHERE winner IN ('green','orange')")
-    fig, ax = plt.subplots(figsize=(8, 3.5))
-    cells[cells.winner=="green"].plot(ax=ax, color="#28dc5a", alpha=0.6, edgecolor="none")
-    cells[cells.winner=="orange"].plot(ax=ax, color="#ff8c00", alpha=0.6, edgecolor="none")
-    ax.set_title("Fig 6. Detail-based authority map (green: 289 cells, orange: 252)")
-    ax.set_xticks([]); ax.set_yticks([]); ax.set_aspect("equal")
+    # Pull cells + overlap-zone shoreline; reproject to Web Mercator (3857) for tiles.
+    cells = gdf("SELECT winner, cell AS geom FROM gom_shoreline.authority_map WHERE winner IN ('green','orange')").set_crs(6344).to_crs(3857)
+    n_g = int((cells.winner == "green").sum())
+    n_o = int((cells.winner == "orange").sum())
+    minx, miny, maxx, maxy = cells.total_bounds
+
+    # Context extent: green+orange+purple (exclude red - far west, no context value here)
+    ctx_zone = gdf("""SELECT geom FROM gom_shoreline.line_network_dr
+                      WHERE src NOT IN ('red')""").set_crs(6344).to_crs(3857)
+    cminx, cminy, cmaxx, cmaxy = ctx_zone.total_bounds
+
+    ESRI = cx.providers.Esri.WorldImagery
+    from matplotlib.patches import Patch, Rectangle
+
+    # Overlap zone is a tall-thin strip (aspect ~0.10). Layout: LEFT = large regional
+    # context (square-ish, fills most width), RIGHT = the narrow tall detail strip.
+    fig = plt.figure(figsize=(10.5, 9.5))
+    fig.set_layout_engine("none")
+    # Context hugs the LEFT margin and enlarges; detail strip hugs the RIGHT margin;
+    # ~3/8" gap between them. Figure is 10.5" wide -> 0.375"/10.5 ~= 0.036 fraction gap.
+    # detail strip: right edge at ~0.985, width 0.15 -> left edge 0.835.
+    # context: left edge ~0.015, right edge = 0.835 - 0.036 gap = ~0.799 -> width 0.784.
+    axc = fig.add_axes([0.015, 0.11, 0.784, 0.85])   # context, hugging left
+    axd = fig.add_axes([0.835, 0.11, 0.150, 0.85])   # detail strip, hugging right
+
+    # LEFT: regional context on satellite, overlap zone boxed, + reconciled shoreline
+    padc = 6000
+    cxlo, cxhi = cminx - padc, cmaxx + padc
+    cylo, cyhi = cminy - padc, cmaxy + padc
+    ctx_zone.cx[cxlo:cxhi, cylo:cyhi].plot(ax=axc, color="#00e5ff", lw=0.3, alpha=0.85)
+    axc.set_xlim(cxlo, cxhi); axc.set_ylim(cylo, cyhi)
+    cx.add_basemap(axc, source=ESRI, crs=3857, attribution=False)
+    # red overlap-zone box drawn LAST + high zorder so it sits on top of shoreline/basemap
+    axc.add_patch(Rectangle((minx, miny), maxx - minx, maxy - miny,
+                            fill=False, edgecolor="red", lw=2.4, zorder=10))
+    axc.set_xticks([]); axc.set_yticks([])
+    axc.set_title("Regional context (LA coast): reconciled shoreline (cyan); red box = overlap zone", fontsize=11)
+    axc.legend(handles=[plt.Line2D([0],[0], color="#00e5ff", lw=1.5, label="reconciled shoreline"),
+                        Patch(facecolor="none", edgecolor="red", label="overlap zone")],
+               loc="lower left", framealpha=0.9, fontsize=9)
+
+    # RIGHT: the tall overlap-zone strip fills the narrow column vertically
+    padd = 600
+    axd.set_xlim(minx - padd, maxx + padd); axd.set_ylim(miny - padd, maxy + padd)
+    cells[cells.winner == "green"].plot(ax=axd, color="#00ff66", alpha=0.62, edgecolor="#004d1f", lw=0.5)
+    cells[cells.winner == "orange"].plot(ax=axd, color="#ff9500", alpha=0.62, edgecolor="#663500", lw=0.5)
+    cx.add_basemap(axd, source=ESRI, crs=3857, attribution=False)
+    axd.set_xticks([]); axd.set_yticks([])
+    axd.set_title("Overlap zone\ndetail (500 m)", fontsize=10)
+
+    # green/orange legend BELOW the detail strip (above the basemap credit), under axd
+    fig.legend(handles=[Patch(facecolor="#00ff66", alpha=0.75, edgecolor="#004d1f", label=f"green denser ({n_g})"),
+                        Patch(facecolor="#ff9500", alpha=0.75, edgecolor="#663500", label=f"orange denser ({n_o})")],
+               loc="lower center", bbox_to_anchor=(0.91, 0.045), framealpha=0.9, fontsize=9, ncol=1)
+
+    # attribution/CRS note at very bottom, clear of both panels
+    fig.text(0.5, 0.015, "Basemap: Esri World Imagery (Esri, Maxar, Earthstar Geographics). "
+                         "Data transformed to Web Mercator (EPSG:3857) for basemap display.",
+             ha="center", fontsize=7.5, color="#333")
     fig.savefig(f"{OUT}/fig6_authority_map.png"); plt.close(fig)
     print("fig6 done")
 
