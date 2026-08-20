@@ -192,6 +192,64 @@ def fig_authority():
     fig.savefig(f"{OUT}/fig6_authority_map.png"); plt.close(fig)
     print("fig6 done")
 
+# --- Recovery: size distribution of large unclosed features -----------------
+def fig_recovery_distribution():
+    rows = q("""
+      SELECT CASE WHEN closed_area_m2 < 100 THEN '<100 m2'
+                  WHEN closed_area_m2 < 1000 THEN '100-1k'
+                  WHEN closed_area_m2 < 10000 THEN '1k-10k'
+                  WHEN closed_area_m2 < 100000 THEN '10k-100k'
+                  WHEN closed_area_m2 < 1000000 THEN '0.1-1 km2'
+                  ELSE '>1 km2' END b, count(*) n
+      FROM gom_shoreline.dangle_clusters2 WHERE closed_area_m2 > 0 GROUP BY 1;""")
+    order = ['<100 m2','100-1k','1k-10k','10k-100k','0.1-1 km2','>1 km2']
+    d = {r[0]: r[1] for r in rows}
+    ys = [d.get(k, 0) for k in order]
+    colors = ["#bbbbbb","#bbbbbb","#bbbbbb","#bbbbbb","#ff8c00","#d62728"]
+    fig, ax = plt.subplots(figsize=(8, 4.4))
+    bars = ax.bar(order, ys, color=colors, edgecolor="#333")
+    ax.set_yscale("log")
+    for i, v in enumerate(ys):
+        ax.text(i, v, f"{v:,}", ha="center", va="bottom", fontsize=9)
+    ax.set_xlabel("Feature size (area enclosed if the open feature were closed)")
+    ax.set_ylabel("Count of features (log scale)")
+    ax.set_title("Unclosed features by size: candidates for polygon recovery\n"
+                 "(orange + red = 70 large features >= 0.1 km2)")
+    fig.savefig(f"{OUT}/fig_recovery_distribution.png"); plt.close(fig)
+    print("fig_recovery_distribution done")
+
+# --- Recovery: overview map of the 70 large candidates on ESRI imagery -------
+def fig_recovery_overview():
+    cand = gdf("""SELECT closed_area_km2, lines_geom AS geom
+                  FROM gom_shoreline.recovery_candidates""").set_crs(6344).to_crs(3857)
+    areas = gdf("""SELECT closed_area_km2, area_geom AS geom
+                   FROM gom_shoreline.recovery_candidates
+                   WHERE area_geom IS NOT NULL AND NOT ST_IsEmpty(area_geom)""").set_crs(6344).to_crs(3857)
+    # context: the reconciled shoreline (exclude red) for orientation
+    ctx = gdf("SELECT geom FROM gom_shoreline.line_network_dr WHERE src NOT IN ('red')").set_crs(6344).to_crs(3857)
+    minx, miny, maxx, maxy = cand.total_bounds
+    padx = (maxx - minx) * 0.08 + 2000
+    pady = (maxy - miny) * 0.08 + 2000
+
+    ESRI = cx.providers.Esri.WorldImagery
+    fig, ax = plt.subplots(figsize=(10.5, 8.5))
+    ctx.cx[minx-padx:maxx+padx, miny-pady:maxy+pady].plot(ax=ax, color="#00e5ff", lw=0.15, alpha=0.5)
+    # areas that would be recovered, colored by size
+    areas.plot(ax=ax, column="closed_area_km2", cmap="autumn_r", alpha=0.75,
+               edgecolor="red", lw=0.4, legend=True,
+               legend_kwds={"label": "Feature size if recovered (km²)", "shrink": 0.5})
+    ax.set_xlim(minx-padx, maxx+padx); ax.set_ylim(miny-pady, maxy+pady)
+    cx.add_basemap(ax, source=ESRI, crs=3857, attribution=False)
+    ax.set_xticks([]); ax.set_yticks([])
+    ax.set_title("Large unclosed features - polygon-recovery candidates\n"
+                 "(70 features >= 0.1 km²; cyan = reconciled shoreline for context)", fontsize=11)
+    fig.text(0.5, 0.02, "Basemap: Esri World Imagery (Esri, Maxar, Earthstar Geographics). "
+                        "Data transformed to Web Mercator (EPSG:3857) for basemap display.",
+             ha="center", fontsize=7.5, color="#333")
+    fig.savefig(f"{OUT}/fig_recovery_overview.png"); plt.close(fig)
+    print("fig_recovery_overview done")
+
 if __name__ == "__main__":
     fig_detail(); fig_fragments(); fig_tangle(); fig_seam(); fig_polys(); fig_authority()
+    fig_recovery_distribution()
     print("ALL FIGURES DONE ->", OUT)
