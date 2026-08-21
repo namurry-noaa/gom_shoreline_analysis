@@ -249,6 +249,32 @@ def fig_recovery_overview():
     fig.savefig(f"{OUT}/fig_recovery_overview.png"); plt.close(fig)
     print("fig_recovery_overview done")
 
+# --- Recovered vs original polygons (RC2) -----------------------------------
+def fig_recovered_vs_original():
+    orig = gdf("SELECT geom FROM gom_shoreline.poly_dr_recovered WHERE src='original'").set_crs(6344).to_crs(3857)
+    rec = gdf("SELECT geom FROM gom_shoreline.poly_dr_recovered WHERE src='recovered'").set_crs(6344).to_crs(3857)
+    minx, miny, maxx, maxy = rec.total_bounds  # frame on where recoveries happened
+    padx = (maxx - minx) * 0.06 + 2000
+    pady = (maxy - miny) * 0.06 + 2000
+    ESRI = cx.providers.Esri.WorldImagery
+    from matplotlib.patches import Patch
+    fig, ax = plt.subplots(figsize=(10.5, 8.5))
+    orig.cx[minx-padx:maxx+padx, miny-pady:maxy+pady].plot(ax=ax, color="#ffd400", alpha=0.45, edgecolor="#b39600", lw=0.2)
+    rec.plot(ax=ax, color="#ff0033", alpha=0.85, edgecolor="#a00020", lw=0.4)
+    ax.set_xlim(minx-padx, maxx+padx); ax.set_ylim(miny-pady, maxy+pady)
+    cx.add_basemap(ax, source=ESRI, crs=3857, attribution=False)
+    ax.set_xticks([]); ax.set_yticks([])
+    ax.set_title("Polygon recovery (RC2): recovered features (red) vs. existing polygons (yellow)\n"
+                 "2,664 recovered polygons (+339 km²); total 91,471", fontsize=11)
+    ax.legend(handles=[Patch(facecolor="#ff0033", alpha=0.85, label="recovered (RC2)"),
+                       Patch(facecolor="#ffd400", alpha=0.6, label="existing polygons")],
+              loc="lower left", framealpha=0.9, fontsize=9)
+    fig.text(0.5, 0.02, "Basemap: Esri World Imagery (Esri, Maxar, Earthstar Geographics). "
+                        "Data transformed to Web Mercator (EPSG:3857) for basemap display.",
+             ha="center", fontsize=7.5, color="#333")
+    fig.savefig(f"{OUT}/fig_recovered_vs_original.png"); plt.close(fig)
+    print("fig_recovered_vs_original done")
+
 if __name__ == "__main__":
     fig_detail(); fig_fragments(); fig_tangle(); fig_seam(); fig_polys(); fig_authority()
     fig_recovery_distribution()

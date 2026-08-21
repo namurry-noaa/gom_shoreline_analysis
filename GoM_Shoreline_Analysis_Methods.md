@@ -294,6 +294,65 @@ All of the above are parameter/scope adjustments on the existing pipeline, not r
 
 ---
 
+## RC2 - Polygon Recovery of Large / Long Open Features
+
+After RC1 review, the modeling team confirmed the line layer was suitable but flagged
+that **some genuinely significant features had not closed into polygons** - specifically
+large-area features *and* long, thin features (jetties, barrier islands) that matter to
+the mesh. RC2 is a targeted recovery pass addressing this, without altering the line
+layer or the polygons already correct in RC1.
+
+### Ranking on two dimensions (area AND linear extent)
+
+RC1 sized features by enclosed area. The modeling team correctly noted that **area alone
+under-represents long, thin features** - a jetty or narrow barrier island can have small
+area but large linear extent, and area-ranking would wrongly discard it as noise. RC2
+therefore ranks candidate features on **both** dimensions: each unclosed feature's
+enclosed area **and** its maximum linear extent (oriented-bounding-box long side). This
+mirrors the RC1 minimum-feature filter, which already used the oriented bounding box to
+protect thin features.
+
+### Recovery rule (union of both planes; no fabrication)
+
+Unclosed line segments were clustered spatially (DBSCAN, 30 m) into candidate features.
+A feature was recovered if:
+
+> **(linear extent >= 100 m OR enclosed area >= 0.01 km²)** - the "recover broadly on
+> both planes" union - **AND it was closable** (its outline already forms a ring, or its
+> free-end gap is <= 25 m and can be bridged).
+
+The 25 m gap limit is the integrity boundary: a <= 25 m break is a genuine digitizing
+gap that can be honestly closed; larger openings would require **fabricating shoreline
+across open water**, which was not done. Features with large gaps remain open and are
+preserved in the line layer.
+
+Recovery mechanics (per candidate, bounded/tiled for scale): snap the cluster's linework
+to itself at 25 m to close small gaps, node, and build polygons (`ST_Snap` -> `ST_Node`
+-> `ST_BuildArea`). New polygons were merged into the RC1 set with centroid-based
+de-duplication so existing polygons were not disturbed.
+
+### RC2 results
+
+| Layer | Polygons | Area |
+|---|--:|--:|
+| Existing (RC1) | 88,807 | 897.4 km² |
+| **Recovered (RC2)** | **+2,664** | **+338.6 km²** |
+| **Total (RC2)** | **91,471** | **1,236.0 km²** |
+
+Recovery added **2,664 polygons (+339 km², ~38% more polygon area)** from 332 recovered
+feature clusters, spanning both large-area and long/thin features. All 91,471 polygons
+are valid (`ST_IsValid` = 100%). At the modeling team's spot-check location
+(90.0 W, 29.65 N), previously-open shoreline was reduced and new polygons formed. The
+line layer is **unchanged** from RC1. Features with source gaps too large to close
+honestly (> 25 m) remain represented in the line layer, not fabricated as polygons.
+
+The RC2 polygon layer carries a `src` attribute (`original` | `recovered`) so recovered
+features can be reviewed independently.
+
+![RC2 polygon recovery: recovered features (red) versus existing polygons (yellow) on Esri World Imagery. 2,664 polygons recovered (+339 km²); total 91,471. Data transformed to Web Mercator (EPSG:3857) for basemap display.](figures/fig_recovered_vs_original.png)
+
+---
+
 ## What We Did NOT Do (data integrity statement)
 
 To be explicit for downstream users:
@@ -307,6 +366,8 @@ To be explicit for downstream users:
 - **All removals were rule-based and quantified** (duplicate co-tracing within 5 m;
   clip debris < 15 m AND < 6 m of reference; artifact slivers; features < 8 m in every
   direction). No manual/hand editing of geometry.
+- **RC2 recovery closed only small (<= 25 m) digitizing gaps.** Larger source gaps were
+  left open (preserved as lines), not fabricated into polygons.
 
 The work is best characterized as **rigorous, rule-based geoprocessing of complex
 overlapping datasets** - reconciliation and derivation, not manipulation.
@@ -317,9 +378,11 @@ overlapping datasets** - reconciliation and derivation, not manipulation.
 
 | File | Contents |
 |---|---|
-| `RC1/gom_shoreline_lines_RC1.gpkg` | Merged shoreline line layer (WGS84) |
-| `RC1/gom_shoreline_polys_RC1.gpkg` | Companion polygon layer (WGS84) |
+| `RC2/gom_shoreline_lines_RC1.gpkg` | Merged shoreline line layer (WGS84; unchanged from RC1) |
+| `RC2/gom_shoreline_polys_RC2_recovered.gpkg` | Recovered polygon layer (WGS84; 91,471 polygons, `src` attribute) |
+| `RC1/` | Original RC1 deliverables retained for reference (line + original polygon layers) |
 | `gom_shoreline_pipeline.sql` | Reproducible PostGIS pipeline (functions + driver) |
+| `make_figures.py` | Regenerates figures (incl. RC2 recovery) from PostGIS |
 | This document | Methods & results |
 
 ---
